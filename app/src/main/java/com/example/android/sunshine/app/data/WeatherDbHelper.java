@@ -16,8 +16,11 @@
 package com.example.android.sunshine.app.data;
 
 import android.content.Context;
+import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
+import android.text.format.DateUtils;
+import android.util.Log;
 
 import com.example.android.sunshine.app.data.WeatherContract.LocationEntry;
 import com.example.android.sunshine.app.data.WeatherContract.WeatherEntry;
@@ -94,5 +97,26 @@ public class WeatherDbHelper extends SQLiteOpenHelper {
         sqLiteDatabase.execSQL("DROP TABLE IF EXISTS " + LocationEntry.TABLE_NAME);
         sqLiteDatabase.execSQL("DROP TABLE IF EXISTS " + WeatherEntry.TABLE_NAME);
         onCreate(sqLiteDatabase);
+    }
+
+    public void getWeather() {
+        SQLiteDatabase db = this.getWritableDatabase();
+        String query = "SELECT * FROM " + WeatherEntry.TABLE_NAME;
+        Cursor cursor = db.rawQuery(query, null);
+
+        int one = 0;
+        long two = 0;
+        long three = 0;
+
+        while (cursor.moveToNext()) {
+            Log.d("SunshineSync: WDB", "Date: " + currentDate);
+            if (DateUtils.isToday(currentDate)) {
+                one = cursor.getInt(cursor.getColumnIndexOrThrow(WeatherEntry.COLUMN_DATE));
+                two = cursor.getLong(cursor.getColumnIndexOrThrow(WeatherEntry.COLUMN_MIN_TEMP));
+                three = cursor.getLong(cursor.getColumnIndexOrThrow(WeatherEntry.COLUMN_MAX_TEMP));
+            }
+        }
+        cursor.close();
+        Log.d("SunshineSync: WDB", one + ", " + two + ", " + three);
     }
 }
