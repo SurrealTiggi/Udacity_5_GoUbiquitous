@@ -26,6 +26,7 @@ import android.preference.PreferenceManager;
 import android.support.annotation.IntDef;
 import android.support.v4.app.NotificationCompat;
 import android.support.v4.app.TaskStackBuilder;
+import android.text.format.DateUtils;
 import android.text.format.Time;
 import android.util.Log;
 
@@ -35,7 +36,15 @@ import com.example.android.sunshine.app.MainActivity;
 import com.example.android.sunshine.app.R;
 import com.example.android.sunshine.app.Utility;
 import com.example.android.sunshine.app.data.WeatherContract;
+import com.example.android.sunshine.app.data.WeatherDbHelper;
 import com.example.android.sunshine.app.muzei.WeatherMuzeiSource;
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.ResultCallback;
+import com.google.android.gms.wearable.DataApi;
+import com.google.android.gms.wearable.PutDataMapRequest;
+import com.google.android.gms.wearable.PutDataRequest;
+import com.google.android.gms.wearable.Wearable;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -52,13 +61,15 @@ import java.net.URL;
 import java.util.Vector;
 import java.util.concurrent.ExecutionException;
 
-public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
+public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter implements GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener{
     public final String LOG_TAG = SunshineSyncAdapter.class.getSimpleName();
     public static final String ACTION_DATA_UPDATED =
             "com.example.android.sunshine.app.ACTION_DATA_UPDATED";
     // Interval at which to sync with the weather, in seconds.
     // 60 seconds (1 minute) * 180 = 3 hours
-    public static final int SYNC_INTERVAL = 60 * 180;
+
+    // Changing sync time to 60 seconds for easy debugging
+    public static final int SYNC_INTERVAL = 30;
     public static final int SYNC_FLEXTIME = SYNC_INTERVAL/3;
     private static final long DAY_IN_MILLIS = 1000 * 60 * 60 * 24;
     private static final int WEATHER_NOTIFICATION_ID = 3004;
@@ -77,6 +88,18 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
     private static final int INDEX_MIN_TEMP = 2;
     private static final int INDEX_SHORT_DESC = 3;
 
+    @Override
+    public void onConnected(Bundle bundle) {
+    }
+
+    @Override
+    public void onConnectionSuspended(int i) {
+    }
+
+    @Override
+    public void onConnectionFailed(ConnectionResult connectionResult) {
+    }
+
     @Retention(RetentionPolicy.SOURCE)
     @IntDef({LOCATION_STATUS_OK, LOCATION_STATUS_SERVER_DOWN, LOCATION_STATUS_SERVER_INVALID,  LOCATION_STATUS_UNKNOWN, LOCATION_STATUS_INVALID})
     public @interface LocationStatus {}
@@ -86,6 +109,8 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
     public static final int LOCATION_STATUS_SERVER_INVALID = 2;
     public static final int LOCATION_STATUS_UNKNOWN = 3;
     public static final int LOCATION_STATUS_INVALID = 4;
+
+    private GoogleApiClient mGoogleApiClient;
 
     public SunshineSyncAdapter(Context context, boolean autoInitialize) {
         super(context, autoInitialize);
@@ -330,6 +355,13 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
                 weatherValues.put(WeatherContract.WeatherEntry.COLUMN_WEATHER_ID, weatherId);
 
                 cVVector.add(weatherValues);
+
+                // Send to wearable from here since dateTime hasn't been converted and saves having
+                // to get from local DB.
+                if (DateUtils.isToday(dateTime)) {
+                    Log.d(LOG_TAG, weatherId + ", " + high + ", " + low + ", " + dateTime);
+                    notifyWearable(high, low, weatherId);
+                }
             }
 
             int inserted = 0;
@@ -342,7 +374,7 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
                 // delete old data so we don't build up an endless history
                 getContext().getContentResolver().delete(WeatherContract.WeatherEntry.CONTENT_URI,
                         WeatherContract.WeatherEntry.COLUMN_DATE + " <= ?",
-                        new String[] {Long.toString(dayTime.setJulianDay(julianStartDay-1))});
+                        new String[]{Long.toString(dayTime.setJulianDay(julianStartDay - 1))});
 
                 updateWidgets();
                 updateMuzei();
@@ -374,6 +406,41 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
             context.startService(new Intent(ACTION_DATA_UPDATED)
                     .setClass(context, WeatherMuzeiSource.class));
         }
+    }
+
+    private void notifyWearable(double high, double low, int weatherId) {
+        Context context = getContext();
+        Log.d(LOG_TAG, "========================================================================");
+
+        mGoogleApiClient = new GoogleApiClient.Builder(context)
+                .addApi(Wearable.API)
+                .build();
+        mGoogleApiClient.connect();
+
+        PutDataMapRequest putDataMapRequest = PutDataMapRequest.create("/weather-details");
+        putDataMapRequest.getDataMap().putDouble("high_temp", high);
+        putDataMapRequest.getDataMap().putDouble("low_temp", low);
+        //TODO: Find a way to send the image straight instead of the int???
+        putDataMapRequest.getDataMap().putInt("weather_id", weatherId);
+
+        PutDataRequest request = putDataMapRequest.asPutDataRequest();
+        Wearable.DataApi.putDataItem(mGoogleApiClient, request)
+                .setResultCallback(new ResultCallback<DataApi.DataItemResult>() {
+                    @Override
+                    public void onResult(DataApi.DataItemResult dataItemResult) {
+                        if (!dataItemResult.getStatus().isSuccess()) {
+                            Log.e(LOG_TAG, "Failed to send data!");
+                        } else {
+                            Log.d(LOG_TAG, "Successfully sent data!");
+                        }
+                    }
+                });
+
+
+       //Log.d(LOG_TAG, weatherUri.getQuery());
+       //new WeatherDbHelper(context).getWeather();
+       //Log.d(LOG_TAG, test[0] + ", " + ", " + test[1] + "," + test[2]);
+
     }
 
     private void notifyWeather() {

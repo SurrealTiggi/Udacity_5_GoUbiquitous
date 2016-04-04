@@ -109,6 +109,7 @@ public class WeatherDbHelper extends SQLiteOpenHelper {
         long three = 0;
 
         while (cursor.moveToNext()) {
+            int currentDate = cursor.getInt(cursor.getColumnIndexOrThrow(WeatherEntry.COLUMN_DATE));
             Log.d("SunshineSync: WDB", "Date: " + currentDate);
             if (DateUtils.isToday(currentDate)) {
                 one = cursor.getInt(cursor.getColumnIndexOrThrow(WeatherEntry.COLUMN_DATE));
