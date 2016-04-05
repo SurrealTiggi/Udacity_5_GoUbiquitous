@@ -41,6 +41,7 @@ import com.example.android.sunshine.app.muzei.WeatherMuzeiSource;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.common.api.ResultCallback;
+import com.google.android.gms.wearable.Asset;
 import com.google.android.gms.wearable.DataApi;
 import com.google.android.gms.wearable.PutDataMapRequest;
 import com.google.android.gms.wearable.PutDataRequest;
@@ -51,6 +52,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -359,7 +361,7 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter implements 
                 // Send to wearable from here since dateTime hasn't been converted and saves having
                 // to get from local DB.
                 if (DateUtils.isToday(dateTime)) {
-                    Log.d(LOG_TAG, weatherId + ", " + high + ", " + low + ", " + dateTime);
+                    Log.d(LOG_TAG, "Going to send: " + weatherId + ", " + high + ", " + low + ", " + dateTime);
                     notifyWearable(high, low, weatherId);
                 }
             }
@@ -408,6 +410,14 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter implements 
         }
     }
 
+    private Asset createAssetFromResourceId(int resourceId) {
+        // First get the image, then do the conversion as per tutorials.
+        final Bitmap bitmap = BitmapFactory.decodeResource(getContext().getResources(), resourceId);
+        final ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, byteStream);
+        return Asset.createFromBytes(byteStream.toByteArray());
+    }
+
     private void notifyWearable(double high, double low, int weatherId) {
         Context context = getContext();
         Log.d(LOG_TAG, "========================================================================");
@@ -420,8 +430,9 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter implements 
         PutDataMapRequest putDataMapRequest = PutDataMapRequest.create("/weather-details");
         putDataMapRequest.getDataMap().putDouble("high_temp", high);
         putDataMapRequest.getDataMap().putDouble("low_temp", low);
-        //TODO: Find a way to send the image straight instead of the int???
-        putDataMapRequest.getDataMap().putInt("weather_id", weatherId);
+        // Need to get local weatherId reference, then conver to bitmap, then send it
+        Asset asset = createAssetFromResourceId(Utility.getIconResourceForWeatherCondition(weatherId));
+        putDataMapRequest.getDataMap().putAsset("weather_id", asset);
 
         PutDataRequest request = putDataMapRequest.asPutDataRequest();
         Wearable.DataApi.putDataItem(mGoogleApiClient, request)
