@@ -420,6 +420,7 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter implements 
 
     private void notifyWearable(double high, double low, int weatherId) {
         Context context = getContext();
+        Log.d(LOG_TAG, "notifyWearable():");
         Log.d(LOG_TAG, "========================================================================");
 
         mGoogleApiClient = new GoogleApiClient.Builder(context)
