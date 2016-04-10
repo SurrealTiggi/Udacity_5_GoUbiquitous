@@ -28,6 +28,7 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.Typeface;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
@@ -47,10 +48,13 @@ import com.google.android.gms.wearable.DataEventBuffer;
 import com.google.android.gms.wearable.DataItem;
 import com.google.android.gms.wearable.DataMap;
 import com.google.android.gms.wearable.DataMapItem;
+import com.google.android.gms.wearable.Node;
+import com.google.android.gms.wearable.NodeApi;
 import com.google.android.gms.wearable.Wearable;
 
 import java.io.InputStream;
 import java.lang.ref.WeakReference;
+import java.util.List;
 import java.util.TimeZone;
 import java.util.concurrent.TimeUnit;
 
@@ -75,6 +79,7 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
      * Handler message id for updating the time periodically in interactive mode.
      */
     private static final int MSG_UPDATE_TIME = 0;
+
 
     @Override
     public Engine onCreateEngine() {
@@ -120,6 +125,7 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
         Double mHighTemperature;
         Double mLowTemperature;
         long TIMEOUT_MS = 1000;
+        private String nodeId;
 
         /**
          * Whether the display supports fewer bits for each color in ambient mode. When true, we
@@ -145,6 +151,9 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
                     .addConnectionCallbacks(this)
                     .addOnConnectionFailedListener(this)
                     .build();
+
+            // http://stackoverflow.com/questions/34444088/how-do-i-transfer-an-android-asset-without-blocking-the-ui-thread
+            //retrieveDeviceNode();
 
             setWatchFaceStyle(new WatchFaceStyle.Builder(SunshineWatchFace.this)
                     .setCardPeekMode(WatchFaceStyle.PEEK_MODE_VARIABLE)
@@ -186,13 +195,16 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
             if (visible) {
                 registerReceiver();
                 mGoogleApiClient.connect();
+                Log.d(TAG, "onVisivilityChanged(): Connected!");
 
                 // Update time zone in case it changed while we weren't visible.
                 mTime.clear(TimeZone.getDefault().getID());
                 mTime.setToNow();
             } else {
                 unregisterReceiver();
+                Wearable.DataApi.removeListener(mGoogleApiClient, this);
                 mGoogleApiClient.disconnect();
+                Log.d(TAG, "onVisivilityChanged(): Removed Listener and disconnected!");
             }
 
             // Whether the timer should be running depends on whether we're visible (as well as
@@ -262,7 +274,8 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
 
         @Override
         public void onDraw(Canvas canvas, Rect bounds) {
-            Log.d(TAG, "onDraw()");
+            Log.d(TAG, "onDraw(): " + mHighTemperature + ", " + mLowTemperature);
+            
             // Draw the background.
             if (isInAmbientMode()) {
                 canvas.drawColor(Color.BLACK);
@@ -320,6 +333,7 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
 
         @Override
         public void onConnectionSuspended(int i) {
+            Log.d(TAG, "onConnectionSuspended()");
         }
 
         @Override
@@ -335,16 +349,17 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
                         DataMap dataMap = DataMapItem.fromDataItem(item).getDataMap();
 
                         // Grab data from phone
-                        // updateCount(dataMap.getInt(COUNT_KEY));
                         mHighTemperature = dataMap.getDouble("high_temp");
                         mLowTemperature = dataMap.getDouble("low_temp");
                         mWeatherIDAsset = dataMap.getAsset("weather_id");
-                        mWeatherIcon = loadBitmapFromAsset(mWeatherIDAsset);
+                        new GetAssetTask().execute(mWeatherIDAsset);
+                        long mTime = dataMap.getLong("time");
 
                         Log.d(TAG, "Received: high: "
                                 + mHighTemperature + ", low: "
                                 + mLowTemperature + ", bitmap: "
-                                + mWeatherIcon);
+                                + mWeatherIDAsset + ", datetime: "
+                                + mTime);
 
                     } else if (event.getType() == DataEvent.TYPE_DELETED) {
                         // DataItem deleted
@@ -353,27 +368,37 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
             }
         }
 
-        public Bitmap loadBitmapFromAsset(Asset asset) {
-            Log.d(TAG, "loadBitmapFromAsset()");
-            if (asset == null) {
+        // http://developer.android.com/training/wearables/data-layer/assets.html
+        private class GetAssetTask extends AsyncTask<Asset, Void, Bitmap> {
+
+            @Override
+            protected Bitmap doInBackground(Asset... assets) {
+                if (assets != null && assets[0] != null) {
+
+                    // Check that there's an active client
+                    ConnectionResult result =
+                            mGoogleApiClient.blockingConnect(TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                    if (!result.isSuccess()) {
+                        return null;
+                    }
+                    // convert asset into a file descriptor and block until it's ready
+                    InputStream assetInputStream = Wearable.DataApi.getFdForAsset(
+                            mGoogleApiClient, assets[0]).await().getInputStream();
+                    mGoogleApiClient.disconnect();
+                    if (assetInputStream == null) {
+                        Log.w(TAG, "Requested an unknown Asset.");
+                        return null;
+                    }
+                    // decode the stream into a bitmap
+                    return BitmapFactory.decodeStream(assetInputStream);
+                }
                 throw new IllegalArgumentException("Asset must be non-null");
             }
-            ConnectionResult result =
-                    mGoogleApiClient.blockingConnect(TIMEOUT_MS, TimeUnit.MILLISECONDS);
-            if (!result.isSuccess()) {
-                return null;
-            }
-            // convert asset into a file descriptor and block until it's ready
-            InputStream assetInputStream = Wearable.DataApi.getFdForAsset(
-                    mGoogleApiClient, asset).await().getInputStream();
-            mGoogleApiClient.disconnect();
 
-            if (assetInputStream == null) {
-                Log.w(TAG, "Requested an unknown Asset.");
-                return null;
+            @Override
+            protected void onPostExecute(Bitmap bitmap) {
+                mWeatherIcon = bitmap;
             }
-            // decode the stream into a bitmap
-            return BitmapFactory.decodeStream(assetInputStream);
         }
 
         @Override

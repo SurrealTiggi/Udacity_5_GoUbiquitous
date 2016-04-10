@@ -361,7 +361,7 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter implements 
                 // Send to wearable from here since dateTime hasn't been converted and saves having
                 // to get from local DB.
                 if (DateUtils.isToday(dateTime)) {
-                    Log.d(LOG_TAG, "Going to send: " + weatherId + ", " + high + ", " + low + ", " + dateTime);
+                    Log.d(LOG_TAG, "Going to send: " + weatherId + ", " + high + ", " + low + ", " + dateTime + ", " + System.currentTimeMillis());
                     notifyWearable(high, low, weatherId);
                 }
             }
@@ -435,6 +435,9 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter implements 
         Asset asset = createAssetFromResourceId(Utility.getIconResourceForWeatherCondition(weatherId));
         putDataMapRequest.getDataMap().putAsset("weather_id", asset);
 
+        // This is just to force the wearable to always update for sake of testing
+        putDataMapRequest.getDataMap().putLong("time",System.currentTimeMillis());
+
         PutDataRequest request = putDataMapRequest.asPutDataRequest();
         Wearable.DataApi.putDataItem(mGoogleApiClient, request)
                 .setResultCallback(new ResultCallback<DataApi.DataItemResult>() {
@@ -447,12 +450,6 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter implements 
                         }
                     }
                 });
-
-
-       //Log.d(LOG_TAG, weatherUri.getQuery());
-       //new WeatherDbHelper(context).getWeather();
-       //Log.d(LOG_TAG, test[0] + ", " + ", " + test[1] + "," + test[2]);
-
     }
 
     private void notifyWeather() {
