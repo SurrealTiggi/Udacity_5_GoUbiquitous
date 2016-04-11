@@ -116,6 +116,11 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter implements 
 
     public SunshineSyncAdapter(Context context, boolean autoInitialize) {
         super(context, autoInitialize);
+
+        // Initiating here otherwise only the first push works
+        mGoogleApiClient = new GoogleApiClient.Builder(context)
+                .addApi(Wearable.API)
+                .build();
     }
 
     @Override
@@ -423,20 +428,17 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter implements 
         Log.d(LOG_TAG, "notifyWearable():");
         Log.d(LOG_TAG, "========================================================================");
 
-        mGoogleApiClient = new GoogleApiClient.Builder(context)
-                .addApi(Wearable.API)
-                .build();
         mGoogleApiClient.connect();
 
         PutDataMapRequest putDataMapRequest = PutDataMapRequest.create("/weather-details");
-        putDataMapRequest.getDataMap().putDouble("high_temp", high);
-        putDataMapRequest.getDataMap().putDouble("low_temp", low);
+        putDataMapRequest.getDataMap().putString("high_temp", Utility.formatTemperature(getContext(), high));
+        putDataMapRequest.getDataMap().putString("low_temp", Utility.formatTemperature(getContext(), low));
         // Need to get local weatherId reference, then conver to bitmap, then send it
         Asset asset = createAssetFromResourceId(Utility.getIconResourceForWeatherCondition(weatherId));
         putDataMapRequest.getDataMap().putAsset("weather_id", asset);
 
         // This is just to force the wearable to always update for sake of testing
-        putDataMapRequest.getDataMap().putLong("time",System.currentTimeMillis());
+        // putDataMapRequest.getDataMap().putLong("time",System.currentTimeMillis());
 
         PutDataRequest request = putDataMapRequest.asPutDataRequest();
         Wearable.DataApi.putDataItem(mGoogleApiClient, request)
